@@ -13,8 +13,57 @@ const io = new Server(server, {
 
 const PORT = process.env.PORT || 3000;
 
-// Rooms
 const rooms = {};
+
+
+// =========================
+// QUESTIONS
+// =========================
+
+const questions = [
+
+    "What is the tallest building in the world?",
+
+    "Who has scored the most goals in football history?",
+
+    "What is the biggest animal in the world?",
+
+    "What is the fastest animal in the world?",
+
+    "What is the biggest country in the world?",
+
+    "What is the most popular sport in the world?",
+
+    "What is the longest river in the world?",
+
+    "What is the biggest planet in our solar system?",
+
+    "What is the hottest place on Earth?",
+
+    "What is the most expensive car in the world?",
+
+    "What is the strongest animal in the world?",
+
+    "What is the smallest country in the world?",
+
+    "What is the biggest ocean in the world?",
+
+    "Who is the most famous football player?",
+
+    "What is the fastest car in the world?"
+
+];
+
+
+function getRandomQuestion() {
+
+    return questions[
+        Math.floor(
+            Math.random() * questions.length
+        )
+    ];
+
+}
 
 
 // =========================
@@ -22,24 +71,31 @@ const rooms = {};
 // =========================
 
 app.get("/", (req, res) => {
-    res.send("I DON'T THINK SO server is online!");
+
+    res.send(
+        "I DON'T THINK SO server is online!"
+    );
+
 });
 
 
 // =========================
-// CREATE ROOM CODE
+// ROOM CODE
 // =========================
 
 function generateRoomCode() {
 
-    const characters = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    const characters =
+        "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
     let code = "";
 
     for (let i = 0; i < 4; i++) {
 
         code += characters[
-            Math.floor(Math.random() * characters.length)
+            Math.floor(
+                Math.random() * characters.length
+            )
         ];
 
     }
@@ -47,10 +103,6 @@ function generateRoomCode() {
     return code;
 }
 
-
-// =========================
-// FIND UNIQUE ROOM
-// =========================
 
 function createRoomCode() {
 
@@ -63,6 +115,25 @@ function createRoomCode() {
     } while (rooms[code]);
 
     return code;
+
+}
+
+
+// =========================
+// SEND ROOM PLAYERS
+// =========================
+
+function sendPlayers(roomCode) {
+
+    const room = rooms[roomCode];
+
+    if (!room) return;
+
+    io.to(roomCode).emit(
+        "playersUpdated",
+        room.players
+    );
+
 }
 
 
@@ -72,7 +143,10 @@ function createRoomCode() {
 
 io.on("connection", (socket) => {
 
-    console.log("Player connected:", socket.id);
+    console.log(
+        "Player connected:",
+        socket.id
+    );
 
 
     // =========================
@@ -81,7 +155,9 @@ io.on("connection", (socket) => {
 
     socket.on("createRoom", (playerName) => {
 
-        const roomCode = createRoomCode();
+        const roomCode =
+            createRoomCode();
+
 
         rooms[roomCode] = {
 
@@ -90,9 +166,21 @@ io.on("connection", (socket) => {
             players: [
                 {
                     id: socket.id,
-                    name: playerName || "Player 1"
+                    name: playerName || "Player"
                 }
-            ]
+            ],
+
+            state: "lobby",
+
+            round: 0,
+
+            question: "",
+
+            answers: {},
+
+            receivedAnswers: {},
+
+            votes: {}
 
         };
 
@@ -106,7 +194,8 @@ io.on("connection", (socket) => {
 
             roomCode: roomCode,
 
-            players: rooms[roomCode].players
+            players:
+                rooms[roomCode].players
 
         });
 
@@ -126,7 +215,8 @@ io.on("connection", (socket) => {
     socket.on("joinRoom", (data) => {
 
         const roomCode =
-            String(data.roomCode || "").toUpperCase();
+            String(data.roomCode || "")
+                .toUpperCase();
 
         const playerName =
             data.playerName || "Player";
@@ -135,8 +225,6 @@ io.on("connection", (socket) => {
         const room =
             rooms[roomCode];
 
-
-        // Room doesn't exist
 
         if (!room) {
 
@@ -150,7 +238,17 @@ io.on("connection", (socket) => {
         }
 
 
-        // Maximum 8 players
+        if (room.state !== "lobby") {
+
+            socket.emit(
+                "joinError",
+                "Game already started!"
+            );
+
+            return;
+
+        }
+
 
         if (room.players.length >= 8) {
 
@@ -163,8 +261,6 @@ io.on("connection", (socket) => {
 
         }
 
-
-        // Add player
 
         room.players.push({
 
@@ -180,8 +276,6 @@ io.on("connection", (socket) => {
         socket.roomCode = roomCode;
 
 
-        // Send success to new player
-
         socket.emit("roomJoined", {
 
             roomCode: roomCode,
@@ -191,17 +285,80 @@ io.on("connection", (socket) => {
         });
 
 
-        // Update everyone in room
-
-        io.to(roomCode).emit(
-            "playersUpdated",
-            room.players
-        );
+        sendPlayers(roomCode);
 
 
         console.log(
             playerName,
             "joined",
+            roomCode
+        );
+
+    });
+
+
+    // =========================
+    // START ONLINE GAME
+    // =========================
+
+    socket.on("startOnlineGame", () => {
+
+        const roomCode =
+            socket.roomCode;
+
+        const room =
+            rooms[roomCode];
+
+
+        if (!room) return;
+
+
+        // Only host can start
+
+        if (room.host !== socket.id) {
+
+            return;
+
+        }
+
+
+        if (room.players.length < 3) {
+
+            socket.emit(
+                "gameError",
+                "You need at least 3 players!"
+            );
+
+            return;
+
+        }
+
+
+        room.state = "answering";
+
+        room.round = 1;
+
+        room.question =
+            getRandomQuestion();
+
+        room.answers = {};
+
+        room.receivedAnswers = {};
+
+        room.votes = {};
+
+
+        io.to(roomCode).emit(
+            "onlineGameStarted",
+            {
+                round: room.round,
+                question: room.question
+            }
+        );
+
+
+        console.log(
+            "Online game started:",
             roomCode
         );
 
@@ -223,13 +380,11 @@ io.on("connection", (socket) => {
         const roomCode =
             socket.roomCode;
 
-
         if (!roomCode) return;
 
 
         const room =
             rooms[roomCode];
-
 
         if (!room) return;
 
@@ -241,24 +396,14 @@ io.on("connection", (socket) => {
             );
 
 
-        // Delete empty room
-
         if (room.players.length === 0) {
 
             delete rooms[roomCode];
-
-            console.log(
-                "Room deleted:",
-                roomCode
-            );
 
             return;
 
         }
 
-
-        // If host left,
-        // make first remaining player host
 
         if (room.host === socket.id) {
 
@@ -268,19 +413,12 @@ io.on("connection", (socket) => {
         }
 
 
-        io.to(roomCode).emit(
-            "playersUpdated",
-            room.players
-        );
+        sendPlayers(roomCode);
 
     });
 
 });
 
-
-// =========================
-// START SERVER
-// =========================
 
 server.listen(PORT, () => {
 

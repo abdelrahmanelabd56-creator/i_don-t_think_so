@@ -21,7 +21,7 @@ const io = new Server(server, {
 
 
 // ==========================================
-// SERVER SETTINGS
+// SETTINGS
 // ==========================================
 
 const PORT = process.env.PORT || 3000;
@@ -29,6 +29,19 @@ const PORT = process.env.PORT || 3000;
 const MAX_PLAYERS = 8;
 
 const MIN_PLAYERS = 3;
+
+
+// ==========================================
+// BASIC ROUTE
+// ==========================================
+
+app.get("/", (req, res) => {
+
+    res.send(
+        "I DON'T THINK SO ONLINE SERVER IS RUNNING!"
+    );
+
+});
 
 
 // ==========================================
@@ -78,7 +91,23 @@ const questions = [
 
 
 // ==========================================
-// GENERATE ROOM CODE
+// RANDOM QUESTION
+// ==========================================
+
+function getRandomQuestion() {
+
+    return questions[
+        Math.floor(
+            Math.random() *
+            questions.length
+        )
+    ];
+
+}
+
+
+// ==========================================
+// ROOM CODE
 // ==========================================
 
 function generateRoomCode() {
@@ -104,10 +133,6 @@ function generateRoomCode() {
 }
 
 
-// ==========================================
-// CREATE UNIQUE ROOM CODE
-// ==========================================
-
 function createUniqueRoomCode() {
 
     let code;
@@ -119,30 +144,46 @@ function createUniqueRoomCode() {
 
     } while (rooms[code]);
 
-
     return code;
 
 }
 
 
 // ==========================================
-// RANDOM QUESTION
+// SHUFFLE
 // ==========================================
 
-function getRandomQuestion() {
+function shuffleArray(array) {
 
-    return questions[
-        Math.floor(
-            Math.random() *
-            questions.length
-        )
-    ];
+    for (
+        let i = array.length - 1;
+        i > 0;
+        i--
+    ) {
+
+        const j =
+            Math.floor(
+                Math.random() *
+                (i + 1)
+            );
+
+        [
+            array[i],
+            array[j]
+        ] = [
+            array[j],
+            array[i]
+        ];
+
+    }
+
+    return array;
 
 }
 
 
 // ==========================================
-// ROOM PLAYER LIST
+// PUBLIC PLAYERS
 // ==========================================
 
 function getPublicPlayers(room) {
@@ -150,13 +191,17 @@ function getPublicPlayers(room) {
     return room.players.map(
         player => ({
 
-            id: player.id,
+            id:
+                player.id,
 
-            name: player.name,
+            name:
+                player.name,
 
-            score: player.score,
+            score:
+                player.score,
 
-            isHost: player.id === room.hostId
+            isHost:
+                player.id === room.hostId
 
         })
     );
@@ -165,7 +210,7 @@ function getPublicPlayers(room) {
 
 
 // ==========================================
-// SEND ROOM UPDATE
+// ROOM UPDATE
 // ==========================================
 
 function sendRoomUpdate(roomCode) {
@@ -175,12 +220,12 @@ function sendRoomUpdate(roomCode) {
 
     if (!room) return;
 
-
     io.to(roomCode).emit(
         "roomUpdate",
         {
 
-            roomCode: roomCode,
+            roomCode:
+                roomCode,
 
             players:
                 getPublicPlayers(room),
@@ -250,22 +295,32 @@ io.on(
 
                     players: [],
 
-                    totalRounds: 1,
+                    totalRounds:
+                        1,
 
-                    currentRound: 0,
+                    currentRound:
+                        0,
 
-                    gameStarted: false,
-
-                    question: "",
-
-                    answers: {},
-
-                    receivedAnswers: {},
-
-                    votes: {},
+                    gameStarted:
+                        false,
 
                     phase:
-                        "lobby"
+                        "lobby",
+
+                    question:
+                        "",
+
+                    answers:
+                        {},
+
+                    receivedAnswers:
+                        {},
+
+                    votes:
+                        {},
+
+                    readyPlayers:
+                        {}
 
                 };
 
@@ -280,7 +335,11 @@ io.on(
                         name:
                             playerName,
 
-                        score: 0
+                        score:
+                            0,
+
+                        ready:
+                            false
 
                     });
 
@@ -313,6 +372,11 @@ io.on(
                             1
 
                     }
+                );
+
+
+                sendRoomUpdate(
+                    roomCode
                 );
 
 
@@ -366,10 +430,6 @@ io.on(
                     rooms[roomCode];
 
 
-                // --------------------------
-                // ROOM DOES NOT EXIST
-                // --------------------------
-
                 if (!room) {
 
                     socket.emit(
@@ -384,10 +444,6 @@ io.on(
 
                 }
 
-
-                // --------------------------
-                // GAME ALREADY STARTED
-                // --------------------------
 
                 if (
                     room.gameStarted
@@ -405,10 +461,6 @@ io.on(
 
                 }
 
-
-                // --------------------------
-                // ROOM FULL
-                // --------------------------
 
                 if (
                     room.players.length >=
@@ -428,10 +480,6 @@ io.on(
                 }
 
 
-                // --------------------------
-                // ADD PLAYER
-                // --------------------------
-
                 room.players.push({
 
                     id:
@@ -440,7 +488,11 @@ io.on(
                     name:
                         playerName,
 
-                    score: 0
+                    score:
+                        0,
+
+                    ready:
+                        false
 
                 });
 
@@ -483,7 +535,7 @@ io.on(
 
                 console.log(
                     playerName +
-                    " joined " +
+                    " joined room " +
                     roomCode
                 );
 
@@ -492,25 +544,20 @@ io.on(
 
 
         // ==================================
-        // CHANGE ROUND COUNT
+        // SET ROUNDS
         // ==================================
 
         socket.on(
             "setRounds",
             rounds => {
 
-                const roomCode =
-                    socket.roomCode;
-
-
                 const room =
-                    rooms[roomCode];
-
+                    rooms[
+                        socket.roomCode
+                    ];
 
                 if (!room) return;
 
-
-                // Only host can change it.
 
                 if (
                     socket.id !==
@@ -550,7 +597,7 @@ io.on(
 
 
                 sendRoomUpdate(
-                    roomCode
+                    socket.roomCode
                 );
 
             }
@@ -565,18 +612,13 @@ io.on(
             "startOnlineGame",
             () => {
 
-                const roomCode =
-                    socket.roomCode;
-
-
                 const room =
-                    rooms[roomCode];
-
+                    rooms[
+                        socket.roomCode
+                    ];
 
                 if (!room) return;
 
-
-                // Only host can start.
 
                 if (
                     socket.id !==
@@ -595,8 +637,6 @@ io.on(
 
                 }
 
-
-                // Minimum players.
 
                 if (
                     room.players.length <
@@ -619,17 +659,12 @@ io.on(
                 room.gameStarted =
                     true;
 
-
                 room.currentRound =
                     1;
 
 
-                room.phase =
-                    "answer";
-
-
                 startOnlineRound(
-                    roomCode
+                    socket.roomCode
                 );
 
             }
@@ -647,7 +682,6 @@ io.on(
             const room =
                 rooms[roomCode];
 
-
             if (!room) return;
 
 
@@ -655,11 +689,17 @@ io.on(
                 getRandomQuestion();
 
 
-            room.answers = {};
+            room.answers =
+                {};
 
-            room.receivedAnswers = {};
+            room.receivedAnswers =
+                {};
 
-            room.votes = {};
+            room.votes =
+                {};
+
+            room.readyPlayers =
+                {};
 
             room.phase =
                 "answer";
@@ -705,13 +745,10 @@ io.on(
             "submitAnswer",
             answer => {
 
-                const roomCode =
-                    socket.roomCode;
-
-
                 const room =
-                    rooms[roomCode];
-
+                    rooms[
+                        socket.roomCode
+                    ];
 
                 if (!room) return;
 
@@ -734,7 +771,6 @@ io.on(
                             socket.id
                     );
 
-
                 if (!player) return;
 
 
@@ -746,11 +782,7 @@ io.on(
                     .slice(0, 100);
 
 
-                if (!answer) {
-
-                    return;
-
-                }
+                if (!answer) return;
 
 
                 room.answers[
@@ -758,7 +790,9 @@ io.on(
                 ] = answer;
 
 
-                io.to(roomCode).emit(
+                io.to(
+                    socket.roomCode
+                ).emit(
                     "answerProgress",
                     {
 
@@ -774,10 +808,6 @@ io.on(
                 );
 
 
-                // --------------------------
-                // ALL ANSWERS RECEIVED
-                // --------------------------
-
                 if (
                     Object.keys(
                         room.answers
@@ -785,8 +815,8 @@ io.on(
                     room.players.length
                 ) {
 
-                    distributeOnlineAnswers(
-                        roomCode
+                    distributeAnswers(
+                        socket.roomCode
                     );
 
                 }
@@ -796,16 +826,15 @@ io.on(
 
 
         // ==================================
-        // DISTRIBUTE ONLINE ANSWERS
+        // DISTRIBUTE ANSWERS
         // ==================================
 
-        function distributeOnlineAnswers(
+        function distributeAnswers(
             roomCode
         ) {
 
             const room =
                 rooms[roomCode];
-
 
             if (!room) return;
 
@@ -817,7 +846,7 @@ io.on(
                 );
 
 
-            const answerObjects =
+            let answerObjects =
                 playerIds.map(
                     id => ({
 
@@ -831,56 +860,25 @@ io.on(
                 );
 
 
-            shuffleArray(
-                answerObjects
-            );
+            // Shuffle until
+            // nobody gets own answer
+
+            let valid = false;
 
 
-            // Make sure nobody gets
-            // their own answer.
+            while (!valid) {
 
-            for (
-                let i = 0;
-                i < playerIds.length;
-                i++
-            ) {
-
-                if (
-                    answerObjects[i]
-                        .ownerId ===
-                    playerIds[i]
-                ) {
-
-                    let swap =
-                        (i + 1) %
-                        playerIds.length;
+                shuffleArray(
+                    answerObjects
+                );
 
 
-                    if (
-                        answerObjects[swap]
-                            .ownerId ===
-                        playerIds[i]
-                    ) {
-
-                        swap =
-                            (i + 2) %
-                            playerIds.length;
-
-                    }
-
-
-                    [
-                        answerObjects[i],
-                        answerObjects[swap]
-
-                    ] = [
-
-                        answerObjects[swap],
-                        answerObjects[i]
-
-                    ];
-
-                }
+                valid =
+                    answerObjects.every(
+                        (item, index) =>
+                            item.ownerId !==
+                            playerIds[index]
+                    );
 
             }
 
@@ -889,27 +887,22 @@ io.on(
                 {};
 
 
-            for (
-                let i = 0;
-                i < playerIds.length;
-                i++
-            ) {
+            playerIds.forEach(
+                (playerId, index) => {
 
-                room.receivedAnswers[
-                    playerIds[i]
-                ] =
-                    answerObjects[i]
-                        .answer;
+                    room.receivedAnswers[
+                        playerId
+                    ] =
+                        answerObjects[index]
+                            .answer;
 
-            }
+                }
+            );
 
 
             room.phase =
                 "convince";
 
-
-            // Send each player only
-            // THEIR received answer.
 
             room.players.forEach(
                 player => {
@@ -959,13 +952,10 @@ io.on(
             "playerReady",
             () => {
 
-                const roomCode =
-                    socket.roomCode;
-
-
                 const room =
-                    rooms[roomCode];
-
+                    rooms[
+                        socket.roomCode
+                    ];
 
                 if (!room) return;
 
@@ -976,32 +966,24 @@ io.on(
                 ) return;
 
 
-                const player =
-                    room.players.find(
-                        p =>
-                            p.id ===
-                            socket.id
-                    );
-
-
-                if (!player) return;
-
-
-                player.ready =
-                    true;
+                room.readyPlayers[
+                    socket.id
+                ] = true;
 
 
                 const allReady =
                     room.players.every(
-                        p =>
-                            p.ready === true
+                        player =>
+                            room.readyPlayers[
+                                player.id
+                            ] === true
                     );
 
 
                 if (allReady) {
 
-                    startOnlineVoting(
-                        roomCode
+                    startVoting(
+                        socket.roomCode
                     );
 
                 }
@@ -1014,13 +996,12 @@ io.on(
         // START VOTING
         // ==================================
 
-        function startOnlineVoting(
+        function startVoting(
             roomCode
         ) {
 
             const room =
                 rooms[roomCode];
-
 
             if (!room) return;
 
@@ -1033,4 +1014,22 @@ io.on(
                 {};
 
 
-   
+            io.to(roomCode).emit(
+                "votingStarted",
+                {
+
+                    round:
+                        room.currentRound,
+
+                    total:
+                        room.totalRounds
+
+                }
+            );
+
+        }
+
+
+        // ==================================
+        // VOTE
+        // ===========================

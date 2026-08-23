@@ -364,7 +364,181 @@ io.on("connection", (socket) => {
 
     });
 
+// =========================
+// SUBMIT ONLINE ANSWER
+// =========================
 
+socket.on("submitOnlineAnswer", (answer) => {
+
+    const roomCode = socket.roomCode;
+    const room = rooms[roomCode];
+
+    if (!room) return;
+
+    if (room.state !== "answering") return;
+
+    // Make sure this player belongs to the room
+    const player = room.players.find(
+        p => p.id === socket.id
+    );
+
+    if (!player) return;
+
+    // Prevent submitting twice
+    if (room.answers[socket.id]) return;
+
+    // Save answer
+    room.answers[socket.id] = String(answer).trim();
+
+
+    // Tell this player that their answer was received
+    socket.emit("answerSubmitted");
+
+
+    // Check if everyone answered
+    const answeredPlayers =
+        Object.keys(room.answers).length;
+
+
+    if (
+        answeredPlayers ===
+        room.players.length
+    ) {
+
+        distributeOnlineAnswers(roomCode);
+
+    }
+
+});
+
+
+// =========================
+// DISTRIBUTE ONLINE ANSWERS
+// =========================
+
+function distributeOnlineAnswers(roomCode) {
+
+    const room = rooms[roomCode];
+
+    if (!room) return;
+
+
+    room.state = "convincing";
+
+
+    const playerIds =
+        room.players.map(
+            player => player.id
+        );
+
+
+    // Create shuffled copy
+    let shuffledIds =
+        [...playerIds];
+
+
+    // Fisher-Yates shuffle
+    for (
+        let i = shuffledIds.length - 1;
+        i > 0;
+        i--
+    ) {
+
+        const j =
+            Math.floor(
+                Math.random() * (i + 1)
+            );
+
+        [
+            shuffledIds[i],
+            shuffledIds[j]
+        ] = [
+            shuffledIds[j],
+            shuffledIds[i]
+        ];
+
+    }
+
+
+    // Make sure nobody gets their own answer
+    let valid = false;
+
+    while (!valid) {
+
+        valid = true;
+
+        for (let i = 0; i < playerIds.length; i++) {
+
+            if (
+                playerIds[i] ===
+                shuffledIds[i]
+            ) {
+
+                valid = false;
+
+                // Swap with another position
+                const swapIndex =
+                    (i + 1) % shuffledIds.length;
+
+                [
+                    shuffledIds[i],
+                    shuffledIds[swapIndex]
+                ] = [
+                    shuffledIds[swapIndex],
+                    shuffledIds[i]
+                ];
+
+                break;
+            }
+
+        }
+
+    }
+
+
+    room.receivedAnswers = {};
+
+
+    // Give each player another player's answer
+    for (
+        let i = 0;
+        i < playerIds.length;
+        i++
+    ) {
+
+        const receiverId =
+            playerIds[i];
+
+        const answerOwnerId =
+            shuffledIds[i];
+
+
+        room.receivedAnswers[receiverId] =
+            room.answers[answerOwnerId];
+
+    }
+
+
+    // Send each player ONLY their received answer
+    room.players.forEach(player => {
+
+        io.to(player.id).emit(
+            "receivedOnlineAnswer",
+            {
+                answer:
+                    room.receivedAnswers[player.id]
+            }
+        );
+
+    });
+
+
+    console.log(
+        "Answers distributed in room:",
+        roomCode
+    );
+
+        }
     // =========================
     // DISCONNECT
     // =========================

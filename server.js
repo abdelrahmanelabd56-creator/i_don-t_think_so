@@ -623,6 +623,188 @@ socket.on("finishedConvincing", () => {
 
 });
     // =========================
+// START VOTING
+// =========================
+
+function startVoting(roomCode) {
+
+    const room = rooms[roomCode];
+
+    if (!room) return;
+
+    room.state = "voting";
+
+    room.votes = {};
+
+    io.to(roomCode).emit(
+        "votingStarted",
+        {
+            players: room.players.map(player => ({
+                id: player.id,
+                name: player.name
+            }))
+        }
+    );
+
+}
+
+
+// =========================
+// SUBMIT VOTE
+// =========================
+
+socket.on("submitVote", (targetId) => {
+
+    const roomCode = socket.roomCode;
+
+    const room = rooms[roomCode];
+
+    if (!room) return;
+
+    if (room.state !== "voting") return;
+
+
+    // Player must exist
+    const voter =
+        room.players.find(
+            player => player.id === socket.id
+        );
+
+    const target =
+        room.players.find(
+            player => player.id === targetId
+        );
+
+
+    if (!voter || !target) return;
+
+
+    // ❌ Can't vote for yourself
+    if (socket.id === targetId) {
+
+        socket.emit(
+            "voteError",
+            "You can't vote for yourself!"
+        );
+
+        return;
+
+    }
+
+
+    // ❌ Can't vote twice
+    if (room.votes[socket.id]) {
+
+        return;
+
+    }
+
+
+    room.votes[socket.id] =
+        targetId;
+
+
+    socket.emit("voteSubmitted");
+
+
+    // Check if everyone voted
+
+    if (
+        Object.keys(room.votes).length ===
+        room.players.length
+    ) {
+
+        calculateResults(roomCode);
+
+    }
+
+});
+
+
+// =========================
+// CALCULATE RESULTS
+// =========================
+
+function calculateResults(roomCode) {
+
+    const room = rooms[roomCode];
+
+    if (!room) return;
+
+
+    room.state = "results";
+
+
+    const scores = {};
+
+
+    // Initialize scores
+
+    room.players.forEach(player => {
+
+        scores[player.id] = 0;
+
+    });
+
+
+    // Count votes
+
+    Object.values(room.votes).forEach(
+        votedPlayerId => {
+
+            if (scores[votedPlayerId] !== undefined) {
+
+                scores[votedPlayerId]++;
+
+            }
+
+        }
+    );
+
+
+    // Add scores
+
+    room.players.forEach(player => {
+
+        if (!player.score) {
+
+            player.score = 0;
+
+        }
+
+        player.score +=
+            scores[player.id];
+
+    });
+
+
+    // Prepare results
+
+    const results =
+        room.players.map(player => ({
+
+            id: player.id,
+
+            name: player.name,
+
+            roundVotes:
+                scores[player.id],
+
+            totalScore:
+                player.score
+
+        }));
+
+
+    io.to(roomCode).emit(
+        "onlineResults",
+        {
+            results: results
+        }
+    );
+
+}
+    // =========================
     // DISCONNECT
     // =========================
 

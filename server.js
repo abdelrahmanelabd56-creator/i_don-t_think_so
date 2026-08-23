@@ -539,6 +539,89 @@ function distributeOnlineAnswers(roomCode) {
     );
 
         }
+    setTimeout(() => {
+
+    startConvincingTurns(roomCode);
+
+}, 1000);
+    // =========================
+// START CONVINCING TURNS
+// =========================
+
+function startConvincingTurns(roomCode) {
+
+    const room = rooms[roomCode];
+
+    if (!room) return;
+
+    room.state = "convincing";
+
+    room.convincingIndex = 0;
+
+    sendConvincingTurn(roomCode);
+}
+
+
+// =========================
+// SEND CURRENT TURN
+// =========================
+
+function sendConvincingTurn(roomCode) {
+
+    const room = rooms[roomCode];
+
+    if (!room) return;
+
+    const currentPlayer =
+        room.players[room.convincingIndex];
+
+    if (!currentPlayer) {
+
+        startVoting(roomCode);
+
+        return;
+
+    }
+
+    io.to(roomCode).emit(
+        "convincingTurn",
+        {
+            playerId: currentPlayer.id,
+            playerName: currentPlayer.name,
+            turnNumber: room.convincingIndex + 1,
+            totalPlayers: room.players.length
+        }
+    );
+}
+
+
+// =========================
+// PLAYER FINISHED CONVINCING
+// =========================
+
+socket.on("finishedConvincing", () => {
+
+    const roomCode = socket.roomCode;
+
+    const room = rooms[roomCode];
+
+    if (!room) return;
+
+    if (room.state !== "convincing") return;
+
+    const currentPlayer =
+        room.players[room.convincingIndex];
+
+    if (!currentPlayer) return;
+
+    // Only the current player can finish
+    if (currentPlayer.id !== socket.id) return;
+
+    room.convincingIndex++;
+
+    sendConvincingTurn(roomCode);
+
+});
     // =========================
     // DISCONNECT
     // =========================

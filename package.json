@@ -1,0 +1,13 @@
+{
+  "name": "i-dont-think-so-server",
+  "version": "1.0.0",
+  "description": "Online server for I DON'T THINK SO",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "socket.io": "^4.8.1"
+  }
+}

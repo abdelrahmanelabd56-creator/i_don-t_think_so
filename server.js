@@ -1,24 +1,46 @@
+// ==========================================
+// I DON'T THINK SO
+// SERVER.JS
+// ONLINE MULTIPLAYER SERVER
+// ==========================================
+
 const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
 
 const app = express();
+
 const server = http.createServer(app);
 
 const io = new Server(server, {
     cors: {
-        origin: "*"
+        origin: "*",
+        methods: ["GET", "POST"]
     }
 });
 
+
+// ==========================================
+// SERVER SETTINGS
+// ==========================================
+
 const PORT = process.env.PORT || 3000;
+
+const MAX_PLAYERS = 8;
+
+const MIN_PLAYERS = 3;
+
+
+// ==========================================
+// ROOMS
+// ==========================================
 
 const rooms = {};
 
 
-// =========================
+// ==========================================
 // QUESTIONS
-// =========================
+// ==========================================
 
 const questions = [
 
@@ -55,38 +77,14 @@ const questions = [
 ];
 
 
-function getRandomQuestion() {
-
-    return questions[
-        Math.floor(
-            Math.random() * questions.length
-        )
-    ];
-
-}
-
-
-// =========================
-// HOME
-// =========================
-
-app.get("/", (req, res) => {
-
-    res.send(
-        "I DON'T THINK SO server is online!"
-    );
-
-});
-
-
-// =========================
-// ROOM CODE
-// =========================
+// ==========================================
+// GENERATE ROOM CODE
+// ==========================================
 
 function generateRoomCode() {
 
     const characters =
-        "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
     let code = "";
 
@@ -94,775 +92,945 @@ function generateRoomCode() {
 
         code += characters[
             Math.floor(
-                Math.random() * characters.length
+                Math.random() *
+                characters.length
             )
         ];
 
     }
 
     return code;
+
 }
 
 
-function createRoomCode() {
+// ==========================================
+// CREATE UNIQUE ROOM CODE
+// ==========================================
+
+function createUniqueRoomCode() {
 
     let code;
 
     do {
 
-        code = generateRoomCode();
+        code =
+            generateRoomCode();
 
     } while (rooms[code]);
+
 
     return code;
 
 }
 
 
-// =========================
-// SEND ROOM PLAYERS
-// =========================
+// ==========================================
+// RANDOM QUESTION
+// ==========================================
 
-function sendPlayers(roomCode) {
+function getRandomQuestion() {
 
-    const room = rooms[roomCode];
-
-    if (!room) return;
-
-    io.to(roomCode).emit(
-        "playersUpdated",
-        room.players
-    );
+    return questions[
+        Math.floor(
+            Math.random() *
+            questions.length
+        )
+    ];
 
 }
 
 
-// =========================
-// SOCKET CONNECTION
-// =========================
+// ==========================================
+// ROOM PLAYER LIST
+// ==========================================
 
-io.on("connection", (socket) => {
+function getPublicPlayers(room) {
 
-    console.log(
-        "Player connected:",
-        socket.id
-    );
-
-
-    // =========================
-    // CREATE ROOM
-    // =========================
-
-    socket.on("createRoom", (playerName) => {
-
-        const roomCode =
-            createRoomCode();
-
-
-        rooms[roomCode] = {
-
-            host: socket.id,
-
-            players: [
-                {
-                    id: socket.id,
-                    name: playerName || "Player"
-                }
-            ],
-
-            state: "lobby",
-
-            round: 0,
-
-            question: "",
-
-            answers: {},
-
-            receivedAnswers: {},
-
-            votes: {}
-
-        };
-
-
-        socket.join(roomCode);
-
-        socket.roomCode = roomCode;
-
-
-        socket.emit("roomCreated", {
-
-            roomCode: roomCode,
-
-            players:
-                rooms[roomCode].players
-
-        });
-
-
-        console.log(
-            "Room created:",
-            roomCode
-        );
-
-    });
-
-
-    // =========================
-    // JOIN ROOM
-    // =========================
-
-    socket.on("joinRoom", (data) => {
-
-        const roomCode =
-            String(data.roomCode || "")
-                .toUpperCase();
-
-        const playerName =
-            data.playerName || "Player";
-
-
-        const room =
-            rooms[roomCode];
-
-
-        if (!room) {
-
-            socket.emit(
-                "joinError",
-                "Room not found!"
-            );
-
-            return;
-
-        }
-
-
-        if (room.state !== "lobby") {
-
-            socket.emit(
-                "joinError",
-                "Game already started!"
-            );
-
-            return;
-
-        }
-
-
-        if (room.players.length >= 8) {
-
-            socket.emit(
-                "joinError",
-                "Room is full!"
-            );
-
-            return;
-
-        }
-
-
-        room.players.push({
-
-            id: socket.id,
-
-            name: playerName
-
-        });
-
-
-        socket.join(roomCode);
-
-        socket.roomCode = roomCode;
-
-
-        socket.emit("roomJoined", {
-
-            roomCode: roomCode,
-
-            players: room.players
-
-        });
-
-
-        sendPlayers(roomCode);
-
-
-        console.log(
-            playerName,
-            "joined",
-            roomCode
-        );
-
-    });
-
-
-    // =========================
-    // START ONLINE GAME
-    // =========================
-
-    socket.on("startOnlineGame", () => {
-
-        const roomCode =
-            socket.roomCode;
-
-        const room =
-            rooms[roomCode];
-
-
-        if (!room) return;
-
-
-        // Only host can start
-
-        if (room.host !== socket.id) {
-
-            return;
-
-        }
-
-
-        if (room.players.length < 3) {
-
-            socket.emit(
-                "gameError",
-                "You need at least 3 players!"
-            );
-
-            return;
-
-        }
-
-
-        room.state = "answering";
-
-        room.round = 1;
-
-        room.question =
-            getRandomQuestion();
-
-        room.answers = {};
-
-        room.receivedAnswers = {};
-
-        room.votes = {};
-
-
-        io.to(roomCode).emit(
-            "onlineGameStarted",
-            {
-                round: room.round,
-                question: room.question
-            }
-        );
-
-
-        console.log(
-            "Online game started:",
-            roomCode
-        );
-
-    });
-
-// =========================
-// SUBMIT ONLINE ANSWER
-// =========================
-
-socket.on("submitOnlineAnswer", (answer) => {
-
-    const roomCode = socket.roomCode;
-    const room = rooms[roomCode];
-
-    if (!room) return;
-
-    if (room.state !== "answering") return;
-
-    // Make sure this player belongs to the room
-    const player = room.players.find(
-        p => p.id === socket.id
-    );
-
-    if (!player) return;
-
-    // Prevent submitting twice
-    if (room.answers[socket.id]) return;
-
-    // Save answer
-    room.answers[socket.id] = String(answer).trim();
-
-
-    // Tell this player that their answer was received
-    socket.emit("answerSubmitted");
-
-
-    // Check if everyone answered
-    const answeredPlayers =
-        Object.keys(room.answers).length;
-
-
-    if (
-        answeredPlayers ===
-        room.players.length
-    ) {
-
-        distributeOnlineAnswers(roomCode);
-
-    }
-
-});
-
-
-// =========================
-// DISTRIBUTE ONLINE ANSWERS
-// =========================
-
-function distributeOnlineAnswers(roomCode) {
-
-    const room = rooms[roomCode];
-
-    if (!room) return;
-
-
-    room.state = "convincing";
-
-
-    const playerIds =
-        room.players.map(
-            player => player.id
-        );
-
-
-    // Create shuffled copy
-    let shuffledIds =
-        [...playerIds];
-
-
-    // Fisher-Yates shuffle
-    for (
-        let i = shuffledIds.length - 1;
-        i > 0;
-        i--
-    ) {
-
-        const j =
-            Math.floor(
-                Math.random() * (i + 1)
-            );
-
-        [
-            shuffledIds[i],
-            shuffledIds[j]
-        ] = [
-            shuffledIds[j],
-            shuffledIds[i]
-        ];
-
-    }
-
-
-    // Make sure nobody gets their own answer
-    let valid = false;
-
-    while (!valid) {
-
-        valid = true;
-
-        for (let i = 0; i < playerIds.length; i++) {
-
-            if (
-                playerIds[i] ===
-                shuffledIds[i]
-            ) {
-
-                valid = false;
-
-                // Swap with another position
-                const swapIndex =
-                    (i + 1) % shuffledIds.length;
-
-                [
-                    shuffledIds[i],
-                    shuffledIds[swapIndex]
-                ] = [
-                    shuffledIds[swapIndex],
-                    shuffledIds[i]
-                ];
-
-                break;
-            }
-
-        }
-
-    }
-
-
-    room.receivedAnswers = {};
-
-
-    // Give each player another player's answer
-    for (
-        let i = 0;
-        i < playerIds.length;
-        i++
-    ) {
-
-        const receiverId =
-            playerIds[i];
-
-        const answerOwnerId =
-            shuffledIds[i];
-
-
-        room.receivedAnswers[receiverId] =
-            room.answers[answerOwnerId];
-
-    }
-
-
-    // Send each player ONLY their received answer
-    room.players.forEach(player => {
-
-        io.to(player.id).emit(
-            "receivedOnlineAnswer",
-            {
-                answer:
-                    room.receivedAnswers[player.id]
-            }
-        );
-
-    });
-
-
-    console.log(
-        "Answers distributed in room:",
-        roomCode
-    );
-
-        }
-    setTimeout(() => {
-
-    startConvincingTurns(roomCode);
-
-}, 1000);
-    // =========================
-// START CONVINCING TURNS
-// =========================
-
-function startConvincingTurns(roomCode) {
-
-    const room = rooms[roomCode];
-
-    if (!room) return;
-
-    room.state = "convincing";
-
-    room.convincingIndex = 0;
-
-    sendConvincingTurn(roomCode);
-}
-
-
-// =========================
-// SEND CURRENT TURN
-// =========================
-
-function sendConvincingTurn(roomCode) {
-
-    const room = rooms[roomCode];
-
-    if (!room) return;
-
-    const currentPlayer =
-        room.players[room.convincingIndex];
-
-    if (!currentPlayer) {
-
-        startVoting(roomCode);
-
-        return;
-
-    }
-
-    io.to(roomCode).emit(
-        "convincingTurn",
-        {
-            playerId: currentPlayer.id,
-            playerName: currentPlayer.name,
-            turnNumber: room.convincingIndex + 1,
-            totalPlayers: room.players.length
-        }
-    );
-}
-
-
-// =========================
-// PLAYER FINISHED CONVINCING
-// =========================
-
-socket.on("finishedConvincing", () => {
-
-    const roomCode = socket.roomCode;
-
-    const room = rooms[roomCode];
-
-    if (!room) return;
-
-    if (room.state !== "convincing") return;
-
-    const currentPlayer =
-        room.players[room.convincingIndex];
-
-    if (!currentPlayer) return;
-
-    // Only the current player can finish
-    if (currentPlayer.id !== socket.id) return;
-
-    room.convincingIndex++;
-
-    sendConvincingTurn(roomCode);
-
-});
-    // =========================
-// START VOTING
-// =========================
-
-function startVoting(roomCode) {
-
-    const room = rooms[roomCode];
-
-    if (!room) return;
-
-    room.state = "voting";
-
-    room.votes = {};
-
-    io.to(roomCode).emit(
-        "votingStarted",
-        {
-            players: room.players.map(player => ({
-                id: player.id,
-                name: player.name
-            }))
-        }
-    );
-
-}
-
-
-// =========================
-// SUBMIT VOTE
-// =========================
-
-socket.on("submitVote", (targetId) => {
-
-    const roomCode = socket.roomCode;
-
-    const room = rooms[roomCode];
-
-    if (!room) return;
-
-    if (room.state !== "voting") return;
-
-
-    // Player must exist
-    const voter =
-        room.players.find(
-            player => player.id === socket.id
-        );
-
-    const target =
-        room.players.find(
-            player => player.id === targetId
-        );
-
-
-    if (!voter || !target) return;
-
-
-    // ❌ Can't vote for yourself
-    if (socket.id === targetId) {
-
-        socket.emit(
-            "voteError",
-            "You can't vote for yourself!"
-        );
-
-        return;
-
-    }
-
-
-    // ❌ Can't vote twice
-    if (room.votes[socket.id]) {
-
-        return;
-
-    }
-
-
-    room.votes[socket.id] =
-        targetId;
-
-
-    socket.emit("voteSubmitted");
-
-
-    // Check if everyone voted
-
-    if (
-        Object.keys(room.votes).length ===
-        room.players.length
-    ) {
-
-        calculateResults(roomCode);
-
-    }
-
-});
-
-
-// =========================
-// CALCULATE RESULTS
-// =========================
-
-function calculateResults(roomCode) {
-
-    const room = rooms[roomCode];
-
-    if (!room) return;
-
-
-    room.state = "results";
-
-
-    const scores = {};
-
-
-    // Initialize scores
-
-    room.players.forEach(player => {
-
-        scores[player.id] = 0;
-
-    });
-
-
-    // Count votes
-
-    Object.values(room.votes).forEach(
-        votedPlayerId => {
-
-            if (scores[votedPlayerId] !== undefined) {
-
-                scores[votedPlayerId]++;
-
-            }
-
-        }
-    );
-
-
-    // Add scores
-
-    room.players.forEach(player => {
-
-        if (!player.score) {
-
-            player.score = 0;
-
-        }
-
-        player.score +=
-            scores[player.id];
-
-    });
-
-
-    // Prepare results
-
-    const results =
-        room.players.map(player => ({
+    return room.players.map(
+        player => ({
 
             id: player.id,
 
             name: player.name,
 
-            roundVotes:
-                scores[player.id],
+            score: player.score,
 
-            totalScore:
-                player.score
+            isHost: player.id === room.hostId
 
-        }));
+        })
+    );
+
+}
+
+
+// ==========================================
+// SEND ROOM UPDATE
+// ==========================================
+
+function sendRoomUpdate(roomCode) {
+
+    const room =
+        rooms[roomCode];
+
+    if (!room) return;
 
 
     io.to(roomCode).emit(
-        "onlineResults",
+        "roomUpdate",
         {
-            results: results
+
+            roomCode: roomCode,
+
+            players:
+                getPublicPlayers(room),
+
+            hostId:
+                room.hostId,
+
+            totalRounds:
+                room.totalRounds,
+
+            gameStarted:
+                room.gameStarted
+
         }
     );
 
 }
-    // =========================
-    // DISCONNECT
-    // =========================
 
-    socket.on("disconnect", () => {
+
+// ==========================================
+// SOCKET CONNECTION
+// ==========================================
+
+io.on(
+    "connection",
+    socket => {
 
         console.log(
-            "Player disconnected:",
+            "Player connected:",
             socket.id
         );
 
 
-        const roomCode =
-            socket.roomCode;
+        // ==================================
+        // CREATE ROOM
+        // ==================================
 
-        if (!roomCode) return;
+        socket.on(
+            "createRoom",
+            playerName => {
+
+                playerName =
+                    String(
+                        playerName ||
+                        "Player"
+                    )
+                    .trim()
+                    .slice(0, 20);
 
 
-        const room =
-            rooms[roomCode];
+                if (!playerName) {
 
-        if (!room) return;
+                    playerName =
+                        "Player";
+
+                }
 
 
-        room.players =
-            room.players.filter(
-                player =>
-                    player.id !== socket.id
+                const roomCode =
+                    createUniqueRoomCode();
+
+
+                rooms[roomCode] = {
+
+                    hostId:
+                        socket.id,
+
+                    players: [],
+
+                    totalRounds: 1,
+
+                    currentRound: 0,
+
+                    gameStarted: false,
+
+                    question: "",
+
+                    answers: {},
+
+                    receivedAnswers: {},
+
+                    votes: {},
+
+                    phase:
+                        "lobby"
+
+                };
+
+
+                rooms[roomCode]
+                    .players
+                    .push({
+
+                        id:
+                            socket.id,
+
+                        name:
+                            playerName,
+
+                        score: 0
+
+                    });
+
+
+                socket.join(
+                    roomCode
+                );
+
+
+                socket.roomCode =
+                    roomCode;
+
+
+                socket.emit(
+                    "roomCreated",
+                    {
+
+                        roomCode:
+                            roomCode,
+
+                        players:
+                            getPublicPlayers(
+                                rooms[roomCode]
+                            ),
+
+                        hostId:
+                            socket.id,
+
+                        totalRounds:
+                            1
+
+                    }
+                );
+
+
+                console.log(
+                    "Room created:",
+                    roomCode
+                );
+
+            }
+        );
+
+
+        // ==================================
+        // JOIN ROOM
+        // ==================================
+
+        socket.on(
+            "joinRoom",
+            data => {
+
+                if (!data) return;
+
+
+                const roomCode =
+                    String(
+                        data.roomCode ||
+                        ""
+                    )
+                    .trim()
+                    .toUpperCase();
+
+
+                let playerName =
+                    String(
+                        data.playerName ||
+                        "Player"
+                    )
+                    .trim()
+                    .slice(0, 20);
+
+
+                if (!playerName) {
+
+                    playerName =
+                        "Player";
+
+                }
+
+
+                const room =
+                    rooms[roomCode];
+
+
+                // --------------------------
+                // ROOM DOES NOT EXIST
+                // --------------------------
+
+                if (!room) {
+
+                    socket.emit(
+                        "joinError",
+                        {
+                            message:
+                                "Room not found."
+                        }
+                    );
+
+                    return;
+
+                }
+
+
+                // --------------------------
+                // GAME ALREADY STARTED
+                // --------------------------
+
+                if (
+                    room.gameStarted
+                ) {
+
+                    socket.emit(
+                        "joinError",
+                        {
+                            message:
+                                "Game already started."
+                        }
+                    );
+
+                    return;
+
+                }
+
+
+                // --------------------------
+                // ROOM FULL
+                // --------------------------
+
+                if (
+                    room.players.length >=
+                    MAX_PLAYERS
+                ) {
+
+                    socket.emit(
+                        "joinError",
+                        {
+                            message:
+                                "Room is full."
+                        }
+                    );
+
+                    return;
+
+                }
+
+
+                // --------------------------
+                // ADD PLAYER
+                // --------------------------
+
+                room.players.push({
+
+                    id:
+                        socket.id,
+
+                    name:
+                        playerName,
+
+                    score: 0
+
+                });
+
+
+                socket.join(
+                    roomCode
+                );
+
+
+                socket.roomCode =
+                    roomCode;
+
+
+                socket.emit(
+                    "roomJoined",
+                    {
+
+                        roomCode:
+                            roomCode,
+
+                        players:
+                            getPublicPlayers(
+                                room
+                            ),
+
+                        hostId:
+                            room.hostId,
+
+                        totalRounds:
+                            room.totalRounds
+
+                    }
+                );
+
+
+                sendRoomUpdate(
+                    roomCode
+                );
+
+
+                console.log(
+                    playerName +
+                    " joined " +
+                    roomCode
+                );
+
+            }
+        );
+
+
+        // ==================================
+        // CHANGE ROUND COUNT
+        // ==================================
+
+        socket.on(
+            "setRounds",
+            rounds => {
+
+                const roomCode =
+                    socket.roomCode;
+
+
+                const room =
+                    rooms[roomCode];
+
+
+                if (!room) return;
+
+
+                // Only host can change it.
+
+                if (
+                    socket.id !==
+                    room.hostId
+                ) {
+
+                    return;
+
+                }
+
+
+                rounds =
+                    parseInt(rounds);
+
+
+                if (
+                    isNaN(rounds)
+                ) {
+
+                    rounds = 1;
+
+                }
+
+
+                rounds =
+                    Math.max(
+                        1,
+                        Math.min(
+                            10,
+                            rounds
+                        )
+                    );
+
+
+                room.totalRounds =
+                    rounds;
+
+
+                sendRoomUpdate(
+                    roomCode
+                );
+
+            }
+        );
+
+
+        // ==================================
+        // START ONLINE GAME
+        // ==================================
+
+        socket.on(
+            "startOnlineGame",
+            () => {
+
+                const roomCode =
+                    socket.roomCode;
+
+
+                const room =
+                    rooms[roomCode];
+
+
+                if (!room) return;
+
+
+                // Only host can start.
+
+                if (
+                    socket.id !==
+                    room.hostId
+                ) {
+
+                    socket.emit(
+                        "gameError",
+                        {
+                            message:
+                                "Only the host can start the game."
+                        }
+                    );
+
+                    return;
+
+                }
+
+
+                // Minimum players.
+
+                if (
+                    room.players.length <
+                    MIN_PLAYERS
+                ) {
+
+                    socket.emit(
+                        "gameError",
+                        {
+                            message:
+                                "You need at least 3 players."
+                        }
+                    );
+
+                    return;
+
+                }
+
+
+                room.gameStarted =
+                    true;
+
+
+                room.currentRound =
+                    1;
+
+
+                room.phase =
+                    "answer";
+
+
+                startOnlineRound(
+                    roomCode
+                );
+
+            }
+        );
+
+
+        // ==================================
+        // START ROUND
+        // ==================================
+
+        function startOnlineRound(
+            roomCode
+        ) {
+
+            const room =
+                rooms[roomCode];
+
+
+            if (!room) return;
+
+
+            room.question =
+                getRandomQuestion();
+
+
+            room.answers = {};
+
+            room.receivedAnswers = {};
+
+            room.votes = {};
+
+            room.phase =
+                "answer";
+
+
+            room.players.forEach(
+                player => {
+
+                    player.ready =
+                        false;
+
+                }
             );
 
 
-        if (room.players.length === 0) {
+            io.to(roomCode).emit(
+                "onlineRoundStarted",
+                {
 
-            delete rooms[roomCode];
+                    round:
+                        room.currentRound,
 
-            return;
+                    totalRounds:
+                        room.totalRounds,
+
+                    question:
+                        room.question,
+
+                    phase:
+                        "answer"
+
+                }
+            );
 
         }
 
 
-        if (room.host === socket.id) {
+        // ==================================
+        // SUBMIT ANSWER
+        // ==================================
 
-            room.host =
-                room.players[0].id;
+        socket.on(
+            "submitAnswer",
+            answer => {
+
+                const roomCode =
+                    socket.roomCode;
+
+
+                const room =
+                    rooms[roomCode];
+
+
+                if (!room) return;
+
+
+                if (
+                    !room.gameStarted
+                ) return;
+
+
+                if (
+                    room.phase !==
+                    "answer"
+                ) return;
+
+
+                const player =
+                    room.players.find(
+                        p =>
+                            p.id ===
+                            socket.id
+                    );
+
+
+                if (!player) return;
+
+
+                answer =
+                    String(
+                        answer || ""
+                    )
+                    .trim()
+                    .slice(0, 100);
+
+
+                if (!answer) {
+
+                    return;
+
+                }
+
+
+                room.answers[
+                    socket.id
+                ] = answer;
+
+
+                io.to(roomCode).emit(
+                    "answerProgress",
+                    {
+
+                        submitted:
+                            Object.keys(
+                                room.answers
+                            ).length,
+
+                        total:
+                            room.players.length
+
+                    }
+                );
+
+
+                // --------------------------
+                // ALL ANSWERS RECEIVED
+                // --------------------------
+
+                if (
+                    Object.keys(
+                        room.answers
+                    ).length ===
+                    room.players.length
+                ) {
+
+                    distributeOnlineAnswers(
+                        roomCode
+                    );
+
+                }
+
+            }
+        );
+
+
+        // ==================================
+        // DISTRIBUTE ONLINE ANSWERS
+        // ==================================
+
+        function distributeOnlineAnswers(
+            roomCode
+        ) {
+
+            const room =
+                rooms[roomCode];
+
+
+            if (!room) return;
+
+
+            const playerIds =
+                room.players.map(
+                    player =>
+                        player.id
+                );
+
+
+            const answerObjects =
+                playerIds.map(
+                    id => ({
+
+                        ownerId:
+                            id,
+
+                        answer:
+                            room.answers[id]
+
+                    })
+                );
+
+
+            shuffleArray(
+                answerObjects
+            );
+
+
+            // Make sure nobody gets
+            // their own answer.
+
+            for (
+                let i = 0;
+                i < playerIds.length;
+                i++
+            ) {
+
+                if (
+                    answerObjects[i]
+                        .ownerId ===
+                    playerIds[i]
+                ) {
+
+                    let swap =
+                        (i + 1) %
+                        playerIds.length;
+
+
+                    if (
+                        answerObjects[swap]
+                            .ownerId ===
+                        playerIds[i]
+                    ) {
+
+                        swap =
+                            (i + 2) %
+                            playerIds.length;
+
+                    }
+
+
+                    [
+                        answerObjects[i],
+                        answerObjects[swap]
+
+                    ] = [
+
+                        answerObjects[swap],
+                        answerObjects[i]
+
+                    ];
+
+                }
+
+            }
+
+
+            room.receivedAnswers =
+                {};
+
+
+            for (
+                let i = 0;
+                i < playerIds.length;
+                i++
+            ) {
+
+                room.receivedAnswers[
+                    playerIds[i]
+                ] =
+                    answerObjects[i]
+                        .answer;
+
+            }
+
+
+            room.phase =
+                "convince";
+
+
+            // Send each player only
+            // THEIR received answer.
+
+            room.players.forEach(
+                player => {
+
+                    io.to(
+                        player.id
+                    ).emit(
+                        "receivedAnswer",
+                        {
+
+                            answer:
+                                room.receivedAnswers[
+                                    player.id
+                                ],
+
+                            round:
+                                room.currentRound
+
+                        }
+                    );
+
+                }
+            );
+
+
+            io.to(roomCode).emit(
+                "convincePhase",
+                {
+
+                    round:
+                        room.currentRound,
+
+                    total:
+                        room.totalRounds
+
+                }
+            );
 
         }
 
 
-        sendPlayers(roomCode);
+        // ==================================
+        // PLAYER READY
+        // ==================================
 
-    });
+        socket.on(
+            "playerReady",
+            () => {
 
-});
+                const roomCode =
+                    socket.roomCode;
 
 
-server.listen(PORT, () => {
+                const room =
+                    rooms[roomCode];
 
-    console.log(
-        `Server running on port ${PORT}`
-    );
 
-});
+                if (!room) return;
+
+
+                if (
+                    room.phase !==
+                    "convince"
+                ) return;
+
+
+                const player =
+                    room.players.find(
+                        p =>
+                            p.id ===
+                            socket.id
+                    );
+
+
+                if (!player) return;
+
+
+                player.ready =
+                    true;
+
+
+                const allReady =
+                    room.players.every(
+                        p =>
+                            p.ready === true
+                    );
+
+
+                if (allReady) {
+
+                    startOnlineVoting(
+                        roomCode
+                    );
+
+                }
+
+            }
+        );
+
+
+        // ==================================
+        // START VOTING
+        // ==================================
+
+        function startOnlineVoting(
+            roomCode
+        ) {
+
+            const room =
+                rooms[roomCode];
+
+
+            if (!room) return;
+
+
+            room.phase =
+                "voting";
+
+
+            room.votes =
+                {};
+
+
+   
